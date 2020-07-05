@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+
+# imapchkr - checks for new messages in IMAP server
+# (c) James Powell - jamespo [at] gmail [dot] com 2014-2020
+# Create ~/.config/.imapchkr.conf with 1 or more sections as below:
+#
+# [serveralias]
+# user=james
+# password=2347923rbkaa
+# server=yourimapserver.com
+# newmail_cmd=/usr/bin/ogg123 /usr/share/sounds/gnome/default/alerts/sonar.ogg
+
+from email.header import make_header, decode_header
+import os
+import imaplib
+import email
+from email.utils import parseaddr
+from optparse import OptionParser
+from collections import namedtuple
+import configparser
+import queue
+import shlex
+import subprocess
+import threading
+
+# tuple of shell colour codes
+colmap = namedtuple('ColMap', ['norm', 'white', 'blue', 'yellow', 'green'])
+colm = colmap('\033[0m', '\033[37;1m', '\033[36;1m', '\033[33;1m', '\033[32;1m')
+
+
+def pidfile(pidpath=None, mode='create'):
+    '''wipe existing processes, create/wipe pidfile'''
+    if pidpath is None:
+        pidpath = '/tmp/.imapchkr.pid'  # TODO move to home
+    if mode != 'create':
+        os.remove(pidpath)
+        return
+    try:
+        with open(pidpath) as pidfile:
+            pid = int(pidfile.read())
+        os.kill(pid, 15)
+    except (FileNotFoundError, ProcessLookupError, ValueError):
+        pass  # doesn't exist or pid invalid
+    with open(pidpath, 'w') as pidfile:
+        pidfile.write(str(os.getpid()))
+
+
+def getopts():
+    '''returns OptionParser.options for CL switches'''
+    parser = OptionParser()
+    parser.add_option("-b", help="b/w output", action="store_false",
+                      dest="color", default=True)
+    parser.add_option("-s", help="short output", action="store_true",
+                      dest="short", default=False)
+    parser.add_option("-l", help="list mail summary", action="store_true",
+                      dest="listmail", default=False)
+    (options, args) = parser.parse_args()
+    return options
+
+
+def readconf():
+    '''returns ConfigParser object with account details'''
+    config = configparser.ConfigParser()
+    config.read(os.path.expanduser('~/.config/.imapchkr.conf'))
+    return config
+
+
+class IMAPChkr():
+    '''defines an individual IMAP account & checks it'''
+    def __init__(self, q, account, user, pw, server,
+                 get_summaries=False, folder="INBOX"):
+        self.q = q
+        self.account = account
+        self.user = user
+        self.pw = pw
+        self.server = server
+        self.get_summaries = get_summaries
+        self.folder = folder
+
+    def checknew(self):
+        '''puts namedtuple Mailinfo with summary of mailbox contents on q'''
+        MInfo = namedtuple('Mailinfo', ['account', 'unread', 'total', 'msgs'])
+        try:
+            # connect to mailserver
+            mail = imaplib.IMAP4_SSL(self.server)
+            if 'AUTH=CRAM-MD5' in mail.capabilities:
+                # use cram_md5 for auth
+                loginstatus, logincomment = mail.login_cram_md5(self.user, self.pw)
+            else:
+                loginstatus, logincomment = mail.login(self.user, self.pw)
+            assert loginstatus == 'OK'
+            mail.list()
+            # select inbox
+            mailinfo = self.count_mails(mail, MInfo)
+        except:
+            mailinfo = MInfo(self.account, None, None, None)
+        finally:
+            if mail.state != 'NONAUTH':
+                mail.close()
+            mail.logout()
+        self.q.put(mailinfo)
+
+    def count_mails(self, mail, MInfo):
+        '''count the mails & return MailInfo tuple'''
+        allretcode, allmessages_str = mail.select(self.folder, readonly=True)
+        unretcode, unmessages = mail.search(None, '(UNSEEN)')
+        if (unretcode, allretcode) == ('OK', 'OK'):
+            allmessages_num = int(allmessages_str[0])
+            unread = unmessages[0].decode("utf-8")
+            if unread == '':
+                # no new mails found
+                mailinfo = MInfo(self.account, 0, allmessages_num, [])
+            else:
+                # new mails found
+                unmessages_arr = unread.split(' ')
+                if self.get_summaries:
+                    msgs = self.get_mails(mail, unmessages_arr)
+                else:
+                    msgs = []
+                mailinfo = MInfo(self.account, len(unmessages_arr),
+                                 allmessages_num, msgs)
+        else:
+            raise imaplib.IMAP4.error()
+        return mailinfo
+
+    def get_mails(self, mail, msg_ids):
+        '''return mail summaries for given msg_ids'''
+        msgs = []
+        EmailSummary = namedtuple('EmailSummary', ['num', 'fromad', 'subject', 'date'])
+        try:
+            for num in msg_ids:
+                typ, data = mail.fetch(num, '(RFC822)')
+                msg = data[0][1]
+                msg = msg.decode('utf-8')
+                msg = email.message_from_string(msg)
+                email_summ = EmailSummary(int(num), self.clean_address(msg['From']),
+                                          self.clean_subject(msg['Subject']), None)
+                msgs.append(email_summ)
+        except Exception as ex:
+            # if any errors just don't list mails
+            msgs = []
+        return msgs
+
+    @staticmethod
+    def clean_address(email_addr):
+        '''return clean from address'''
+        clean_addr = parseaddr(email_addr)
+        return IMAPChkr.unicode_to_str(clean_addr[0] or clean_addr[1])
+
+    @staticmethod
+    def clean_subject(subj):
+        '''decode subject if in unicode format'''
+        subj = IMAPChkr.unicode_to_str(subj)
+        # remove newlines
+        subj = subj.replace('\r', '')
+        subj = subj.replace('\n', '')
+        return subj
+
+    @staticmethod
+    def unicode_to_str(header):
+        '''convert unicode header to plain str if required'''
+        return str(make_header(decode_header(header)))
+
+
+class MailResults():
+    '''results for all IMAPChkr instances'''
+    def __init__(self, cmd_options, mailtotals, acct_cols):
+        self.cmd_options = cmd_options
+        self.mailtotals = mailtotals
+        self.acct_cols = acct_cols
+
+    def format_msgcnt(self):
+        '''returns string with overview (read/unread) for all accounts'''
+        output = ''
+        for mailtotal in self.mailtotals:
+            account_name = mailtotal.account
+            if self.cmd_options.color:
+                account_name = '%s%s%s' % (self.acct_cols[account_name],
+                                           account_name, colm.norm)
+            if self.cmd_options.short:
+                output += "%s:%s " % (account_name[0], mailtotal.unread)
+            elif None in (mailtotal.unread, mailtotal.total):
+                output += '[%s: unknown] ' % account_name
+            elif self.cmd_options.color and mailtotal.unread > 0:
+                output += '[%s: %s%d/%d%s] ' % (account_name, colm.white,
+                                                mailtotal.unread, mailtotal.total, colm.norm)
+            else:
+                output += '[%s: %d/%d] ' % (account_name, mailtotal.unread, mailtotal.total)
+        output = output.rstrip()
+        return output
+
+    def format_mailsummaries(self):
+        '''takes list of MailInfo tuple & returns formatted string of mails'''
+        ac_max_len = max((len(mailinfo.account) for mailinfo in self.mailtotals))
+        summaries = []
+        for mailinfo in self.mailtotals:
+            account_name = mailinfo.account
+            if self.cmd_options.color:
+                account_name = '%s%s%s' % (self.acct_cols[account_name],
+                                           account_name, colm.norm)
+            # spaces to pad account name with (colouring breaks padding)
+            acct_spc = ' ' * (ac_max_len - len(mailinfo.account))
+            s_fmt = '[{acct_spc}{acct}] [{summ.num:04d}] {summ.fromad:25} {summ.subject:40}'
+            for summ in mailinfo.msgs:
+                summaries.append(s_fmt.format(acct=account_name,
+                                              ac_max_len=ac_max_len,
+                                              summ=summ, acct_spc=acct_spc))
+        return "\n".join(summaries)
+
+
+def run_cmd(cmd):
+    subprocess.run(shlex.split(cmd), capture_output=True)
+
+
+def get_mailcounts(q, cmd_options, config, accounts):
+    '''start thread to check each account & put results on q'''
+    for account in accounts:
+        user, pw, server = (config.get(account, 'user'),
+                            config.get(account, 'password'),
+                            config.get(account, 'server'))
+        acct = IMAPChkr(q, account, user, pw, server, cmd_options.listmail)
+        t = threading.Thread(target=acct.checknew)
+        t.start()
+
+
+def display_mailcounts(q, cmd_options, config, accounts):
+    '''pull results off q, format & display'''
+    mailtotals = []
+    acct_cols = {}  # dict of account name : colour
+    for acct_num, account in enumerate(accounts):
+        msg_results = q.get()
+        mailtotals.append(msg_results)
+        if config.has_option(account, 'newmail_cmd') and msg_results.unread > 0:
+            # play new mail command if configured
+            run_cmd(config.get(account, 'newmail_cmd'))
+        # store colour for account
+        acct_cols[account] = colm[(acct_num % (len(colm)-2))+2]
+    mt = MailResults(cmd_options, mailtotals, acct_cols)
+    print(mt.format_msgcnt())
+    # display email summaries if chosen and any new mails
+    if cmd_options.listmail and any((msg.unread > 0 for msg in mailtotals)):
+        print(mt.format_mailsummaries())
+
+
+def main():
+    '''load options, start check threads and display results'''
+    pidfile()
+    cmd_options = getopts()
+    config = readconf()
+    accounts = config.sections()
+    q = queue.Queue(len(accounts))
+    get_mailcounts(q, cmd_options, config, accounts)
+    display_mailcounts(q, cmd_options, config, accounts)
+    pidfile(None, 'remove')
+
+
+if __name__ == '__main__':
+    main()

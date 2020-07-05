@@ -65,6 +65,18 @@ def readconf():
     return config
 
 
+class MailInfo():
+    '''store mailcheck results'''
+    def __init__(self, account, unread=None, total=None, msgs=None):
+        self.account = account
+        self.unread = unread
+        self.total = total
+        if msgs is not None:
+            self.msgs = msgs
+        else:
+            self.msgs = []
+
+
 class IMAPChkr():
     '''defines an individual IMAP account & checks it'''
     def __init__(self, q, account, user, pw, server,
@@ -79,49 +91,48 @@ class IMAPChkr():
 
     def checknew(self):
         '''puts namedtuple Mailinfo with summary of mailbox contents on q'''
-        MInfo = namedtuple('Mailinfo', ['account', 'unread', 'total', 'msgs'])
         try:
             # connect to mailserver
-            mail = imaplib.IMAP4_SSL(self.server)
-            if 'AUTH=CRAM-MD5' in mail.capabilities:
+            mailconn = imaplib.IMAP4_SSL(self.server)
+            if 'AUTH=CRAM-MD5' in mailconn.capabilities:
                 # use cram_md5 for auth
-                loginstatus, logincomment = mail.login_cram_md5(self.user, self.pw)
+                loginstatus, logincomment = mailconn.login_cram_md5(self.user, self.pw)
             else:
-                loginstatus, logincomment = mail.login(self.user, self.pw)
+                loginstatus, logincomment = mailconn.login(self.user, self.pw)
             assert loginstatus == 'OK'
-            mail.list()
-            # select inbox
-            mailinfo = self.count_mails(mail, MInfo)
+            mailconn.list()
+            # select inbox & get count
+            minfo = self.count_mails(mailconn)
         except:
-            mailinfo = MInfo(self.account, None, None, None)
+            minfo = MailInfo(self.account)  # failed, blank results
         finally:
-            if mail.state != 'NONAUTH':
-                mail.close()
-            mail.logout()
-        self.q.put(mailinfo)
+            if mailconn.state != 'NONAUTH':
+                mailconn.close()
+            mailconn.logout()
+        self.q.put(minfo)
 
-    def count_mails(self, mail, MInfo):
+    def count_mails(self, mailconn):
         '''count the mails & return MailInfo tuple'''
-        allretcode, allmessages_str = mail.select(self.folder, readonly=True)
-        unretcode, unmessages = mail.search(None, '(UNSEEN)')
+        allretcode, allmessages_str = mailconn.select(self.folder, readonly=True)
+        unretcode, unmessages = mailconn.search(None, '(UNSEEN)')
         if (unretcode, allretcode) == ('OK', 'OK'):
             allmessages_num = int(allmessages_str[0])
             unread = unmessages[0].decode("utf-8")
             if unread == '':
                 # no new mails found
-                mailinfo = MInfo(self.account, 0, allmessages_num, [])
+                minfo = MailInfo(self.account, 0, allmessages_num, [])
             else:
                 # new mails found
                 unmessages_arr = unread.split(' ')
                 if self.get_summaries:
-                    msgs = self.get_mails(mail, unmessages_arr)
+                    msgs = self.get_mails(mailconn, unmessages_arr)
                 else:
                     msgs = []
-                mailinfo = MInfo(self.account, len(unmessages_arr),
+                minfo = MailInfo(self.account, len(unmessages_arr),
                                  allmessages_num, msgs)
         else:
             raise imaplib.IMAP4.error()
-        return mailinfo
+        return minfo
 
     def get_mails(self, mail, msg_ids):
         '''return mail summaries for given msg_ids'''

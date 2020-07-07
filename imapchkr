@@ -28,6 +28,13 @@ colmap = namedtuple('ColMap', ['norm', 'white', 'blue', 'yellow', 'green'])
 colm = colmap('\033[0m', '\033[37;1m', '\033[36;1m', '\033[33;1m', '\033[32;1m')
 
 
+def get_accounts(sections):
+    '''return list of account sections from config'''
+    setsect = set(sections)
+    setsect.discard('imapchkr')
+    return tuple(setsect)
+
+
 def pidfile(pidpath=None, mode='create'):
     '''wipe existing processes, create/wipe pidfile'''
     if pidpath is None:
@@ -58,10 +65,10 @@ def getopts():
     return options
 
 
-def readconf():
+def readconf(confpath=os.path.expanduser('~/.config/.imapchkr.conf')):
     '''returns ConfigParser object with account details'''
     config = configparser.ConfigParser()
-    config.read(os.path.expanduser('~/.config/.imapchkr.conf'))
+    config.read(confpath)
     return config
 
 
@@ -137,7 +144,8 @@ class IMAPChkr():
     def get_mails(self, mail, msg_ids):
         '''return mail summaries for given msg_ids'''
         msgs = []
-        EmailSummary = namedtuple('EmailSummary', ['num', 'fromad', 'subject', 'date'])
+        EmailSummary = namedtuple('EmailSummary', ['num', 'fromad', 'subject',
+                                                   'date', 'isnew'])
         try:
             for num in msg_ids:
                 typ, data = mail.fetch(num, '(RFC822)')
@@ -145,7 +153,8 @@ class IMAPChkr():
                 msg = msg.decode('utf-8')
                 msg = email.message_from_string(msg)
                 email_summ = EmailSummary(int(num), self.clean_address(msg['From']),
-                                          self.clean_subject(msg['Subject']), None)
+                                          self.clean_subject(msg['Subject']),
+                                          None, None)
                 msgs.append(email_summ)
         except Exception as ex:
             # if any errors just don't list mails
@@ -258,7 +267,7 @@ def main():
     pidfile()
     cmd_options = getopts()
     config = readconf()
-    accounts = config.sections()
+    accounts = get_accounts(config.sections())
     q = queue.Queue(len(accounts))
     get_mailcounts(q, cmd_options, config, accounts)
     display_mailcounts(q, cmd_options, config, accounts)

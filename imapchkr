@@ -74,10 +74,11 @@ def readconf(confpath=os.path.expanduser('~/.config/.imapchkr.conf')):
 
 class MailInfo():
     '''store mailcheck results'''
-    def __init__(self, account, unread=None, total=None, msgs=None):
+    def __init__(self, account, unread=None, total=None, folder=None, msgs=None):
         self.account = account
         self.unread = unread
         self.total = total
+        self.folder = folder
         if msgs is not None:
             self.msgs = msgs
         else:
@@ -87,47 +88,56 @@ class MailInfo():
 class IMAPChkr():
     '''defines an individual IMAP account & checks it'''
     def __init__(self, q, account, user, pw, server,
-                 get_summaries=False, folder="INBOX"):
+                 get_summaries=False, folder=None):
         self.q = q
         self.account = account
         self.user = user
         self.pw = pw
         self.server = server
         self.get_summaries = get_summaries
-        self.folder = folder
+        if folder is None:
+            self.folders = ("INBOX",)  # default
+        else:
+            self.folders = folder
+        self.mailconn = None
+
+    def connect(self):
+        '''connect to the mailserver'''
+        self.mailconn = imaplib.IMAP4_SSL(self.server)
+        if 'AUTH=CRAM-MD5' in self.mailconn.capabilities:
+            # use cram_md5 for auth
+            loginstatus, logincomment = self.mailconn.login_cram_md5(self.user, self.pw)
+        else:
+            loginstatus, logincomment = self.mailconn.login(self.user, self.pw)
+        assert loginstatus == 'OK'
+        self.mailconn.list()  # TODO: needed?
 
     def checknew(self):
         '''puts namedtuple Mailinfo with summary of mailbox contents on q'''
         try:
             # connect to mailserver
-            mailconn = imaplib.IMAP4_SSL(self.server)
-            if 'AUTH=CRAM-MD5' in mailconn.capabilities:
-                # use cram_md5 for auth
-                loginstatus, logincomment = mailconn.login_cram_md5(self.user, self.pw)
-            else:
-                loginstatus, logincomment = mailconn.login(self.user, self.pw)
-            assert loginstatus == 'OK'
-            mailconn.list()
-            # select inbox & get count
-            minfo = self.count_mails(mailconn)
-        except:
+            self.connect()
+            # select folder & get count
+            for folder in self.folders:
+                minfo = self.count_mails(folder)
+        except:  # TODO: make exception checking more specific
             minfo = MailInfo(self.account)  # failed, blank results
         finally:
-            if mailconn.state != 'NONAUTH':
-                mailconn.close()
-            mailconn.logout()
+            if self.mailconn.state != 'NONAUTH':
+                self.mailconn.close()
+            self.mailconn.logout()
         self.q.put(minfo)
 
-    def count_mails(self, mailconn):
+    def count_mails(self, folder):
         '''count the mails & return MailInfo tuple'''
-        allretcode, allmessages_str = mailconn.select(self.folder, readonly=True)
-        unretcode, unmessages = mailconn.search(None, '(UNSEEN)')
+        allretcode, allmessages_str = self.mailconn.select(folder, readonly=True)
+        unretcode, unmessages = self.mailconn.search(None, '(UNSEEN)')
         if (unretcode, allretcode) == ('OK', 'OK'):
             allmessages_num = int(allmessages_str[0])
             unread = unmessages[0].decode("utf-8")
             if unread == '':
                 # no new mails found
-                minfo = MailInfo(self.account, 0, allmessages_num, [])
+                minfo = MailInfo(self.account, 0, allmessages_num, folder, [])
             else:
                 # new mails found
                 unmessages_arr = unread.split(' ')
@@ -136,7 +146,7 @@ class IMAPChkr():
                 else:
                     msgs = []
                 minfo = MailInfo(self.account, len(unmessages_arr),
-                                 allmessages_num, msgs)
+                                 allmessages_num, folder,  msgs)
         else:
             raise imaplib.IMAP4.error()
         return minfo
@@ -229,6 +239,7 @@ class MailResults():
 
 
 def run_cmd(cmd):
+    '''run command'''
     subprocess.run(shlex.split(cmd), capture_output=True)
 
 

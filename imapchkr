@@ -9,6 +9,7 @@
 # password=2347923rbkaa
 # server=yourimapserver.com
 # newmail_cmd=/usr/bin/ogg123 /usr/share/sounds/gnome/default/alerts/sonar.ogg
+# folders=INBOX,Work
 
 from email.header import make_header, decode_header
 import os
@@ -218,7 +219,7 @@ class MailResults():
                 account_name = '%s%s%s' % (self.acct_cols[minfo.account],
                                            account_name, colm.norm)
             if self.cmd_options.short:
-                output += "%s:%s " % (account_name[0], minfo.unread)
+                output += "%s:%s " % (minfo.account[0], minfo.unread)
             elif None in (minfo.unread, minfo.total):
                 output += '[%s: unknown] ' % account_name
             elif self.cmd_options.color and minfo.unread > 0:
@@ -231,7 +232,8 @@ class MailResults():
 
     def format_mailsummaries(self):
         '''takes list of MailInfo tuple & returns formatted string of mails'''
-        ac_max_len = max((len(mailinfo.account) for mailinfo in self.mailinfos))
+        ac_max_len = max((len(mailinfo.account)+len(mailinfo.folder)+1
+                          for mailinfo in self.mailinfos))
         summaries = []
         for mailinfo in self.mailinfos:
             account_name = mailinfo.account
@@ -250,6 +252,7 @@ class MailResults():
 
 def run_cmd(cmd):
     '''run command'''
+    # output will be captured
     subprocess.run(shlex.split(cmd), capture_output=True)
 
 

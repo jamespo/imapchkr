@@ -270,10 +270,13 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     mailinfos = []
     acct_cols = {}  # dict of account name : colour
     for acct_num, account in enumerate(acct2folder.keys()):
+        found_unread = False
         for folder in acct2folder[account]:
             msg_results = q.get()
+            if not found_unread:
+                found_unread = msg_results.unread > 0
             mailinfos.append(msg_results)
-        if config.has_option(account, 'newmail_cmd') and msg_results.unread > 0:
+        if config.has_option(account, 'newmail_cmd') and found_unread:
             # play new mail command if configured
             run_cmd(config.get(account, 'newmail_cmd'))
         # store colour for account

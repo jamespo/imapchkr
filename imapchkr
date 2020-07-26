@@ -28,11 +28,17 @@ colmap = namedtuple('ColMap', ['norm', 'white', 'blue', 'yellow', 'green'])
 colm = colmap('\033[0m', '\033[37;1m', '\033[36;1m', '\033[33;1m', '\033[32;1m')
 
 
-def get_accounts(sections):
-    '''return list of account sections from config'''
-    setsect = set(sections)
-    setsect.discard('imapchkr')
-    return tuple(setsect)
+def get_accounts(config):
+    '''return dict of account name -> folders to check from config'''
+    accounts = set(config.sections())
+    accounts.discard('imapchkr')  # global options - not account
+    acct2folder = {}
+    for account in tuple(accounts):
+        folders = config.get(account, 'folders', fallback=('INBOX',))
+        if folders != ('INBOX',):
+            folders = tuple(folders.split(','))
+        acct2folder[account] = folders
+    return acct2folder
 
 
 def pidfile(pidpath=None, mode='create'):
@@ -87,19 +93,16 @@ class MailInfo():
 
 class IMAPChkr():
     '''defines an individual IMAP account & checks it'''
-    def __init__(self, q, account, user, pw, server,
-                 get_summaries=False, folders=None):
+    def __init__(self, q, account, user, pw, server, folders,
+                 get_summaries=False):
         self.q = q
         self.account = account
         self.user = user
         self.pw = pw
         self.server = server
         self.get_summaries = get_summaries
-        if folders is None:
-            self.folders = ("INBOX",)  # default
-        else:
-            self.folders = folders
         self.mailconn = None
+        self.folders = folders
 
     def connect(self):
         '''connect to the mailserver'''
@@ -198,36 +201,39 @@ class IMAPChkr():
 
 class MailResults():
     '''results for all IMAPChkr instances'''
-    def __init__(self, cmd_options, mailtotals, acct_cols):
+    def __init__(self, cmd_options, mailinfos, acct_cols):
         self.cmd_options = cmd_options
-        self.mailtotals = mailtotals
+        self.mailinfos = mailinfos
         self.acct_cols = acct_cols
 
     def format_msgcnt(self):
         '''returns string with overview (read/unread) for all accounts'''
         output = ''
-        for mailtotal in self.mailtotals:
-            account_name = mailtotal.account
+        for minfo in self.mailinfos:
+            account_name = minfo.account
+            if minfo.folder != 'INBOX':
+                # append folder name to label if not INBOX
+                account_name += '.%s' % minfo.folder
             if self.cmd_options.color:
-                account_name = '%s%s%s' % (self.acct_cols[account_name],
+                account_name = '%s%s%s' % (self.acct_cols[minfo.account],
                                            account_name, colm.norm)
             if self.cmd_options.short:
-                output += "%s:%s " % (account_name[0], mailtotal.unread)
-            elif None in (mailtotal.unread, mailtotal.total):
+                output += "%s:%s " % (account_name[0], minfo.unread)
+            elif None in (minfo.unread, minfo.total):
                 output += '[%s: unknown] ' % account_name
-            elif self.cmd_options.color and mailtotal.unread > 0:
+            elif self.cmd_options.color and minfo.unread > 0:
                 output += '[%s: %s%d/%d%s] ' % (account_name, colm.white,
-                                                mailtotal.unread, mailtotal.total, colm.norm)
+                                                minfo.unread, minfo.total, colm.norm)
             else:
-                output += '[%s: %d/%d] ' % (account_name, mailtotal.unread, mailtotal.total)
+                output += '[%s: %d/%d] ' % (account_name, minfo.unread, minfo.total)
         output = output.rstrip()
         return output
 
     def format_mailsummaries(self):
         '''takes list of MailInfo tuple & returns formatted string of mails'''
-        ac_max_len = max((len(mailinfo.account) for mailinfo in self.mailtotals))
+        ac_max_len = max((len(mailinfo.account) for mailinfo in self.mailinfos))
         summaries = []
-        for mailinfo in self.mailtotals:
+        for mailinfo in self.mailinfos:
             account_name = mailinfo.account
             if self.cmd_options.color:
                 account_name = '%s%s%s' % (self.acct_cols[account_name],
@@ -247,33 +253,35 @@ def run_cmd(cmd):
     subprocess.run(shlex.split(cmd), capture_output=True)
 
 
-def get_mailcounts(q, cmd_options, config, accounts):
+def get_mailcounts(q, cmd_options, config, acct2folder):
     '''start thread to check each account & put results on q'''
-    for account in accounts:
+    for account in acct2folder.keys():
         user, pw, server = (config.get(account, 'user'),
                             config.get(account, 'password'),
                             config.get(account, 'server'))
-        acct = IMAPChkr(q, account, user, pw, server, cmd_options.listmail)
+        folders = acct2folder[account]
+        acct = IMAPChkr(q, account, user, pw, server, folders, cmd_options.listmail)
         t = threading.Thread(target=acct.checknew)
         t.start()
 
 
-def display_mailcounts(q, cmd_options, config, accounts):
+def display_mailcounts(q, cmd_options, config, acct2folder):
     '''pull results off q, format & display'''
-    mailtotals = []
+    mailinfos = []
     acct_cols = {}  # dict of account name : colour
-    for acct_num, account in enumerate(accounts):
-        msg_results = q.get()
-        mailtotals.append(msg_results)
+    for acct_num, account in enumerate(acct2folder.keys()):
+        for folder in acct2folder[account]:
+            msg_results = q.get()
+            mailinfos.append(msg_results)
         if config.has_option(account, 'newmail_cmd') and msg_results.unread > 0:
             # play new mail command if configured
             run_cmd(config.get(account, 'newmail_cmd'))
         # store colour for account
         acct_cols[account] = colm[(acct_num % (len(colm)-2))+2]
-    mt = MailResults(cmd_options, mailtotals, acct_cols)
+    mt = MailResults(cmd_options, mailinfos, acct_cols)
     print(mt.format_msgcnt())
     # display email summaries if chosen and any new mails
-    if cmd_options.listmail and any((msg.unread > 0 for msg in mailtotals)):
+    if cmd_options.listmail and any((msg.unread > 0 for msg in mailinfos)):
         print(mt.format_mailsummaries())
 
 
@@ -282,10 +290,10 @@ def main():
     pidfile()
     cmd_options = getopts()
     config = readconf()
-    accounts = get_accounts(config.sections())
-    q = queue.Queue(len(accounts))
-    get_mailcounts(q, cmd_options, config, accounts)
-    display_mailcounts(q, cmd_options, config, accounts)
+    acct2folder = get_accounts(config)
+    q = queue.Queue(len(acct2folder))  # total # of folders
+    get_mailcounts(q, cmd_options, config, acct2folder)
+    display_mailcounts(q, cmd_options, config, acct2folder)
     pidfile(None, 'remove')
 
 

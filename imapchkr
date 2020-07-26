@@ -269,8 +269,8 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     '''pull results off q, format & display'''
     mailinfos = []
     acct_cols = {}  # dict of account name : colour
+    found_unread = False
     for acct_num, account in enumerate(acct2folder.keys()):
-        found_unread = False
         for folder in acct2folder[account]:
             msg_results = q.get()
             if not found_unread:

@@ -88,17 +88,17 @@ class MailInfo():
 class IMAPChkr():
     '''defines an individual IMAP account & checks it'''
     def __init__(self, q, account, user, pw, server,
-                 get_summaries=False, folder=None):
+                 get_summaries=False, folders=None):
         self.q = q
         self.account = account
         self.user = user
         self.pw = pw
         self.server = server
         self.get_summaries = get_summaries
-        if folder is None:
+        if folders is None:
             self.folders = ("INBOX",)  # default
         else:
-            self.folders = folder
+            self.folders = folders
         self.mailconn = None
 
     def connect(self):
@@ -115,18 +115,22 @@ class IMAPChkr():
     def checknew(self):
         '''puts namedtuple Mailinfo with summary of mailbox contents on q'''
         try:
-            # connect to mailserver
             self.connect()
-            # select folder & get count
-            for folder in self.folders:
-                minfo = self.count_mails(folder)
         except:  # TODO: make exception checking more specific
-            minfo = MailInfo(self.account)  # failed, blank results
-        finally:
-            if self.mailconn.state != 'NONAUTH':
-                self.mailconn.close()
-            self.mailconn.logout()
-        self.q.put(minfo)
+            pass  # handled below
+        # loop through folders & get count
+        for folder in self.folders:
+            try:
+                minfo = self.count_mails(folder)
+            except:
+                # empty result
+                minfo = MailInfo(self.account, folder=folder)
+            finally:
+                self.q.put(minfo)
+        # close connection
+        if self.mailconn.state != 'NONAUTH':
+            self.mailconn.close()
+        self.mailconn.logout()
 
     def count_mails(self, folder):
         '''count the mails & return MailInfo tuple'''
@@ -142,7 +146,7 @@ class IMAPChkr():
                 # new mails found
                 unmessages_arr = unread.split(' ')
                 if self.get_summaries:
-                    msgs = self.get_mails(mailconn, unmessages_arr)
+                    msgs = self.get_mails(unmessages_arr)
                 else:
                     msgs = []
                 minfo = MailInfo(self.account, len(unmessages_arr),
@@ -151,14 +155,14 @@ class IMAPChkr():
             raise imaplib.IMAP4.error()
         return minfo
 
-    def get_mails(self, mail, msg_ids):
+    def get_mails(self, msg_ids):
         '''return mail summaries for given msg_ids'''
         msgs = []
         EmailSummary = namedtuple('EmailSummary', ['num', 'fromad', 'subject',
                                                    'date', 'isnew'])
         try:
             for num in msg_ids:
-                typ, data = mail.fetch(num, '(RFC822)')
+                typ, data = self.mailconn.fetch(num, '(RFC822)')
                 msg = data[0][1]
                 msg = msg.decode('utf-8')
                 msg = email.message_from_string(msg)

@@ -232,8 +232,14 @@ class MailResults():
 
     def format_mailsummaries(self):
         '''takes list of MailInfo tuple & returns formatted string of mails'''
-        ac_max_len = max((len(mailinfo.account)+len(mailinfo.folder)+1
-                          for mailinfo in self.mailinfos))
+        non_inbox_folders = set(mailinfo.folder for mailinfo in self.mailinfos)
+        non_inbox_folders.discard("INBOX")
+        # non-INBOX folders
+        if len(non_inbox_folders):
+            ac_max_len = max((len(mailinfo.account)+len(mailinfo.folder)+1
+                              for mailinfo in self.mailinfos))
+        else:
+            ac_max_len = max(len(mailinfo.account) for mailinfo in self.mailinfos)
         summaries = []
         for mailinfo in self.mailinfos:
             account_name = mailinfo.account

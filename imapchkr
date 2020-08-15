@@ -68,6 +68,8 @@ def getopts():
                       dest="short", default=False)
     parser.add_option("-l", help="list mail summary", action="store_true",
                       dest="listmail", default=False)
+    parser.add_option("-f", help="folders to check (acct:f1,f2;acct2:f3,f4)",
+                      dest="folders")
     (options, args) = parser.parse_args()
     return options
 
@@ -234,8 +236,8 @@ class MailResults():
         '''takes list of MailInfo tuple & returns formatted string of mails'''
         non_inbox_folders = set(mailinfo.folder for mailinfo in self.mailinfos)
         non_inbox_folders.discard("INBOX")
-        # non-INBOX folders
         if len(non_inbox_folders):
+            # non-INBOX folders being checked - include folder name in summary display
             ac_max_len = max((len(mailinfo.account)+len(mailinfo.folder)+1
                               for mailinfo in self.mailinfos))
         else:

@@ -29,13 +29,17 @@ colmap = namedtuple('ColMap', ['norm', 'white', 'blue', 'yellow', 'green'])
 colm = colmap('\033[0m', '\033[37;1m', '\033[36;1m', '\033[33;1m', '\033[32;1m')
 
 
-def get_accounts(config):
-    '''return dict of account name -> folders to check from config'''
+def get_accounts(config, cmd_folders):
+    '''return dict of account name -> folders to check from config/cmd line'''
     accounts = set(config.sections())
     accounts.discard('imapchkr')  # global options - not account
     acct2folder = {}
     for account in tuple(accounts):
-        folders = config.get(account, 'folders', fallback=('INBOX',))
+        # if cmdline folders exists, override conf file
+        if cmd_folders.get(account):
+            folders = cmd_folders[account]
+        else:
+            folders = config.get(account, 'folders', fallback=('INBOX',))
         if folders != ('INBOX',):
             folders = tuple(folders.split(','))
         acct2folder[account] = folders
@@ -70,9 +74,21 @@ def getopts():
                       dest="listmail", default=False)
     parser.add_option("-f", help="folders to check (acct:f1,f2;acct2:f3,f4)",
                       dest="folders")
-    (options, args) = parser.parse_args()
+    options, args = parser.parse_args()
+    options.folders = parse_folder_opts(options.folders)
     return options
 
+
+def parse_folder_opts(opt_folders):
+    '''parse -f folders flag string'''
+    if opt_folders is None:
+        return {}
+    manual_acct2fldr = {}
+    for sect in opt_folders.split(';'):
+        acct, folder_str = sect.split(':')
+        manual_acct2fldr[acct] = folder_str # split in get_accounts()
+    return manual_acct2fldr
+    
 
 def readconf(confpath=os.path.expanduser('~/.config/.imapchkr.conf')):
     '''returns ConfigParser object with account details'''
@@ -304,7 +320,7 @@ def main():
     pidfile()
     cmd_options = getopts()
     config = readconf()
-    acct2folder = get_accounts(config)
+    acct2folder = get_accounts(config, cmd_options.folders)
     q = queue.Queue(len(acct2folder))  # total # of folders
     get_mailcounts(q, cmd_options, config, acct2folder)
     display_mailcounts(q, cmd_options, config, acct2folder)

@@ -13,6 +13,7 @@
 
 from email.header import make_header, decode_header
 import os
+import sys
 import imaplib
 import email
 from email.utils import parseaddr
@@ -184,9 +185,10 @@ class IMAPChkr():
                                                    'date', 'isnew'])
         try:
             for num in msg_ids:
-                typ, data = self.mailconn.fetch(num, '(RFC822)')
+                typ, data = self.mailconn.fetch(num, '(RFC822.HEADER)')
                 msg = data[0][1]
-                msg = msg.decode('utf-8')
+                # msg = msg.decode('utf-8')
+                msg = msg.decode('cp1252')  # windows codec seems to work
                 msg = email.message_from_string(msg)
                 email_summ = EmailSummary(int(num), self.clean_address(msg['From']),
                                           self.clean_subject(msg['Subject']),
@@ -194,6 +196,7 @@ class IMAPChkr():
                 msgs.append(email_summ)
         except Exception as ex:
             # if any errors just don't list mails
+            print("Error listing mails: %s" % ex, file=sys.stderr)
             msgs = []
         return msgs
 

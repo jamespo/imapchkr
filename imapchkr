@@ -169,6 +169,7 @@ class IMAPChkr():
                 # new mails found
                 unmessages_arr = unread.split(' ')
                 if self.get_summaries:
+                    # will need to be enabled for run_cmd to populate details!
                     msgs = self.get_mails(unmessages_arr)
                 else:
                     msgs = []
@@ -277,10 +278,27 @@ class MailResults():
         return "\n".join(summaries)
 
 
-def run_cmd(cmd):
-    '''run command'''
-    # output will be captured
-    subprocess.run(shlex.split(cmd), capture_output=True)
+def run_cmd(cmd, msg_results):
+    '''run external command'''
+    args = shlex.split(cmd)
+    # last arg can optionally be format string
+    if '{' in args[-1]:
+        # replace final arg with args expanded
+        args[-1] = populate_arg(args[-1], msg_results)
+    subprocess.run(args, capture_output=True)
+    # subprocess.run(args)  # DEBUG
+
+
+def populate_arg(arg, msg_results):
+    '''substitute variables into str format'''
+    fromdetails = ','.join(msg.fromad for msg in msg_results.msgs)
+    args = {'account': msg_results.account,
+            'unread': msg_results.unread,
+            'fromdetails': fromdetails}
+    try:
+        return str.format(arg, **args)
+    except KeyError:
+        return ''
 
 
 def get_mailcounts(q, cmd_options, config, acct2folder):
@@ -300,15 +318,16 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     mailinfos = []
     acct_cols = {}  # dict of account name : colour
     found_unread = False
+    # loop round accounts & folders (just to get # of q entries right)
     for acct_num, account in enumerate(acct2folder.keys()):
         for folder in acct2folder[account]:
-            msg_results = q.get()
+            msg_results = q.get()  # NOT NECESSARILY the folder/acct in the loop!
             if not found_unread:
                 found_unread = msg_results.unread > 0
             mailinfos.append(msg_results)
-        if config.has_option(account, 'newmail_cmd') and found_unread:
-            # play new mail command if configured
-            run_cmd(config.get(account, 'newmail_cmd'))
+            if config.has_option(msg_results.account, 'newmail_cmd') and found_unread:
+                # execute new mail command if configured
+                run_cmd(config.get(msg_results.account, 'newmail_cmd'), msg_results)
         # store colour for account
         acct_cols[account] = colm[(acct_num % (len(colm)-2))+2]
     mt = MailResults(cmd_options, mailinfos, acct_cols)

@@ -285,13 +285,13 @@ def run_cmd(cmd, msg_results):
     if '{' in args[-1]:
         # replace final arg with args expanded
         args[-1] = populate_arg(args[-1], msg_results)
-    subprocess.run(args, capture_output=True)
-    # subprocess.run(args)  # DEBUG
+    # subprocess.run(args, capture_output=True)
+    subprocess.run(args)  # DEBUG
 
 
 def populate_arg(arg, msg_results):
     '''substitute variables into str format'''
-    fromdetails = ','.join(msg.fromad for msg in msg_results.msgs)
+    fromdetails = ','.join(set(msg.fromad for msg in msg_results.msgs))
     args = {'account': msg_results.account,
             'unread': msg_results.unread,
             'fromdetails': fromdetails}

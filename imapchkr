@@ -161,7 +161,7 @@ class IMAPChkr():
         unretcode, unmessages = self.mailconn.search(None, '(UNSEEN)')
         if (unretcode, allretcode) == ('OK', 'OK'):
             allmessages_num = int(allmessages_str[0])
-            unread = unmessages[0].decode("utf-8")
+            unread = unmessages[0].decode(encoding="utf-8", errors='replace')
             if unread == '':
                 # no new mails found
                 minfo = MailInfo(self.account, 0, allmessages_num, folder, [])
@@ -188,8 +188,8 @@ class IMAPChkr():
             for num in msg_ids:
                 typ, data = self.mailconn.fetch(num, '(RFC822.HEADER)')
                 msg = data[0][1]
-                # msg = msg.decode('utf-8')
-                msg = msg.decode('cp1252')  # windows codec seems to work
+                msg = msg.decode(encoding='utf-8', errors='replace')
+                # msg = msg.decode('cp1252')  # windows codec seems to work
                 msg = email.message_from_string(msg)
                 email_summ = EmailSummary(int(num), self.clean_address(msg['From']),
                                           self.clean_subject(msg['Subject']),

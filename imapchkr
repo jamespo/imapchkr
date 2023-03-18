@@ -36,6 +36,9 @@ def get_accounts(config, cmd_folders):
     accounts.discard('imapchkr')  # global options - not account
     acct2folder = {}
     for account in tuple(accounts):
+        # if cmdline folders passed & account not in list skip it
+        if len(cmd_folders) and account not in cmd_folders:
+            continue
         # if cmdline folders exists, override conf file
         folders = cmd_folders.get(
             account,

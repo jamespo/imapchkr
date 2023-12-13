@@ -22,6 +22,7 @@ from collections import namedtuple
 import configparser
 import queue
 import shlex
+import socket
 import subprocess
 import threading
 
@@ -347,6 +348,7 @@ def main():
     config = readconf()
     acct2folder = get_accounts(config, cmd_options.folders)
     q = queue.Queue(len(acct2folder))  # total # of folders
+    socket.setdefaulttimeout(15)  # IMAP server connections timeout
     get_mailcounts(q, cmd_options, config, acct2folder)
     display_mailcounts(q, cmd_options, config, acct2folder)
     pidfile(None, 'remove')

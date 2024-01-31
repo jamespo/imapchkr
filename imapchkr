@@ -70,6 +70,8 @@ def pidfile(pidpath=None, mode='create'):
 def getopts():
     '''returns OptionParser.options for CL switches'''
     parser = OptionParser()
+    parser.add_option("-c", help="config file", dest="conffile",
+                      default="~/.config/.imapchkr.conf")
     parser.add_option("-b", help="b/w output", action="store_false",
                       dest="color", default=True)
     parser.add_option("-s", help="short output", action="store_true",
@@ -94,10 +96,10 @@ def parse_folder_opts(opt_folders):
     return manual_acct2fldr
 
 
-def readconf(confpath=os.path.expanduser('~/.config/.imapchkr.conf')):
+def readconf(conffile):
     '''returns ConfigParser object with account details'''
     config = configparser.ConfigParser()
-    config.read(confpath)
+    config.read(os.path.expanduser(conffile))
     return config
 
 
@@ -345,7 +347,7 @@ def main():
     '''load options, start check threads and display results'''
     pidfile()
     cmd_options = getopts()
-    config = readconf()
+    config = readconf(cmd_options.conffile)
     acct2folder = get_accounts(config, cmd_options.folders)
     q = queue.Queue(len(acct2folder))  # total # of folders
     socket.setdefaulttimeout(15)  # IMAP server connections timeout

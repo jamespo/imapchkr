@@ -19,10 +19,11 @@ Create ~/.config/.imapchkr.conf with 1 or more sections as below:
     Usage: imapchkr [options]
 
     Options:
-      -h, --help  show this help message and exit
-      -b          b/w output
-      -s          short output
-      -l          list mail summary
+      -h, --help      show this help message and exit
+      -b              b/w output
+      -s              short output
+      -l              list mail summary
+	  -c configfile   config file (default ~/.config/.imapchkr.conf)
 
 ## Notes
 

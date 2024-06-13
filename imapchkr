@@ -26,6 +26,8 @@ import socket
 import subprocess
 import threading
 
+DEBUG=False
+
 # tuple of shell colour codes
 colmap = namedtuple('ColMap', ['norm', 'white', 'blue', 'yellow', 'green'])
 colm = colmap('\033[0m', '\033[37;1m', '\033[36;1m', '\033[33;1m', '\033[32;1m')
@@ -293,13 +295,17 @@ def run_cmd(cmd, msg_results):
     if '{' in args[-1]:
         # replace final arg with args expanded
         args[-1] = populate_arg(args[-1], msg_results)
-    subprocess.run(args, capture_output=True)
-    # subprocess.run(args)  # DEBUG
+    if DEBUG:
+        subprocess.run(args)
+    else:
+        subprocess.run(args, capture_output=True)
 
 
 def populate_arg(arg, msg_results):
     '''substitute variables into str format'''
     fromdetails = ','.join(set(msg.fromad for msg in msg_results.msgs))
+    if fromdetails == '':
+        fromdetails = 'use -l flag!'
     args = {'account': msg_results.account,
             'unread': msg_results.unread,
             'fromdetails': fromdetails}
@@ -359,4 +365,6 @@ def main():
 
 
 if __name__ == '__main__':
+    if os.getenv('ICDEBUG'):
+        DEBUG = True
     main()

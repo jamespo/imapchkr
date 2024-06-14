@@ -163,7 +163,10 @@ class IMAPChkr():
         # close connection
         if self.mailconn.state != 'NONAUTH':
             self.mailconn.close()
-        self.mailconn.logout()
+        try:
+            self.mailconn.logout()
+        except OSError:
+            print("%s timed out" % self.account, file=sys.stderr)
 
     def count_mails(self, folder):
         '''count the mails & return MailInfo tuple'''

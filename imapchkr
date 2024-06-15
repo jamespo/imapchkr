@@ -102,7 +102,7 @@ def parse_folder_opts(opt_folders):
 
 def readconf(conffile):
     '''returns ConfigParser object with account details'''
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)
     config.read(os.path.expanduser(conffile))
     return config
 
@@ -133,16 +133,22 @@ class IMAPChkr():
         self.get_summaries = get_summaries
         self.mailconn = None
         self.folders = folders
+        if DEBUG:
+            print('%s: initialized' % self.account)
 
     def connect(self):
         '''connect to the mailserver'''
         self.mailconn = imaplib.IMAP4_SSL(self.server)
         if 'AUTH=CRAM-MD5' in self.mailconn.capabilities:
             # use cram_md5 for auth
+            if DEBUG:
+                print('Using md5')
             status, comment = self.mailconn.login_cram_md5(self.user, self.pw)
         else:
             status, comment = self.mailconn.login(self.user, self.pw)
         assert status == 'OK'
+        if DEBUG:
+            print('logged in')
         self.mailconn.list()  # TODO: needed?
 
     def checknew(self):
@@ -150,6 +156,8 @@ class IMAPChkr():
         try:
             self.connect()
         except:  # TODO: make exception checking more specific
+            if DEBUG:
+                print('connect failed')
             pass  # handled below
         # loop through folders & get count
         for folder in self.folders:

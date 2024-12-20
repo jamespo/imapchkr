@@ -369,7 +369,8 @@ def main():
     config = readconf(cmd_options.conffile)
     acct2folder = get_accounts(config, cmd_options.folders)
     q = queue.Queue(len(acct2folder))  # total # of folders
-    socket.setdefaulttimeout(15)  # IMAP server connections timeout
+    # set IMAP server connections timeout
+    socket.setdefaulttimeout(int(os.getenv('IMAPCTM', 15)))
     get_mailcounts(q, cmd_options, config, acct2folder)
     display_mailcounts(q, cmd_options, config, acct2folder)
     pidfile(cmd_options.pidpath, 'remove')

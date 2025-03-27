@@ -380,7 +380,7 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     any_newmail_found = any(msg.unread > 0 for msg in mailinfos)
     if cmd_options.waybar:
         waybar_out = { "text": " " + mt.format_msgcnt() + " ",
-                       "tool.tip": mt.format_mailsummaries() }
+                       "tooltip": mt.format_mailsummaries() }
         if any_newmail_found:
             # change waybar CSS if unread mail found
             waybar_out["class"] = "newmail"

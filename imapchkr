@@ -80,12 +80,17 @@ def getopts():
                       dest="short", default=False)
     parser.add_option("-l", help="list mail summary", action="store_true",
                       dest="listmail", default=False)
+    parser.add_option("-w", help="waybar output", action="store_true",
+                      dest="waybar", default=False)
     parser.add_option("-f", help="folders to check (acct:f1,f2;acct2:f3,f4)",
                       dest="folders")
     parser.add_option("-p", help="pid path", dest="pidpath",
                       default="/tmp/.imapchkr.pid")
     options, _ = parser.parse_args()
     options.folders = parse_folder_opts(options.folders)
+    if options.waybar:
+        # waybar output is always b/w
+        options.color = False
     return options
 
 
@@ -143,9 +148,9 @@ class IMAPChkr():
             # use cram_md5 for auth
             if DEBUG:
                 print('Using md5')
-            status, comment = self.mailconn.login_cram_md5(self.user, self.pw)
+            status, _ = self.mailconn.login_cram_md5(self.user, self.pw)
         else:
-            status, comment = self.mailconn.login(self.user, self.pw)
+            status, _ = self.mailconn.login(self.user, self.pw)
         assert status == 'OK'
         if DEBUG:
             print('logged in')
@@ -207,7 +212,7 @@ class IMAPChkr():
                                                    'date', 'isnew'])
         try:
             for num in msg_ids:
-                typ, data = self.mailconn.fetch(num, '(RFC822.HEADER)')
+                _, data = self.mailconn.fetch(num, '(RFC822.HEADER)')
                 msg = data[0][1]
                 msg = msg.decode(encoding='utf-8', errors='replace')
                 # msg = msg.decode('cp1252')  # windows codec seems to work
@@ -347,7 +352,7 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     for acct_num, account in enumerate(acct2folder.keys()):
         for folder in acct2folder[account]:
             msg_results = q.get()  # NOT NECESSARILY the folder/acct in the loop!
-            if not found_unread:
+            if (not found_unread) and msg_results.unread is not None:
                 found_unread = msg_results.unread > 0
             mailinfos.append(msg_results)
             if config.has_option(msg_results.account, 'newmail_cmd') and found_unread:
@@ -356,10 +361,15 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
         # store colour for account
         acct_cols[account] = colm[(acct_num % (len(colm)-2))+2]
     mt = MailResults(cmd_options, mailinfos, acct_cols)
-    print(mt.format_msgcnt())
-    # display email summaries if chosen and any new mails
-    if cmd_options.listmail and any((msg.unread > 0 for msg in mailinfos)):
-        print(mt.format_mailsummaries())
+    if cmd_options.waybar:
+        waybar_out = { "text": mt.format_msgcnt(),
+                       "tooltip": mt.format_mailsummaries() }
+        print(waybar_out)
+    else:
+        print(mt.format_msgcnt())
+        # display email summaries if chosen and any new mails
+        if cmd_options.listmail and any((msg.unread > 0 for msg in mailinfos)):
+            print(mt.format_mailsummaries())
 
 
 def main():

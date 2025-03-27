@@ -89,7 +89,8 @@ def getopts():
     options, _ = parser.parse_args()
     options.folders = parse_folder_opts(options.folders)
     if options.waybar:
-        # waybar output is always b/w
+        # waybar output is always b/w and list on
+        options.listmail = True
         options.color = False
     return options
 
@@ -280,6 +281,7 @@ class MailResults():
 
     def format_mailsummaries(self):
         '''takes list of MailInfo tuple & returns formatted string of mails'''
+        # find maximum length of account "field" (inc folder name if any)
         non_inbox_folders = set(mailinfo.folder for mailinfo in self.mailinfos)
         non_inbox_folders.discard("INBOX")
         if len(non_inbox_folders):
@@ -288,16 +290,30 @@ class MailResults():
                               for mailinfo in self.mailinfos))
         else:
             ac_max_len = max(len(mailinfo.account) for mailinfo in self.mailinfos)
+
         summaries = []
         for mailinfo in self.mailinfos:
             account_name = mailinfo.account
+
+            folder_name = ''
+            if mailinfo.folder != 'INBOX':
+                # append folder name to label if not INBOX
+                # if DEBUG:
+                #     print('setting folder_name %s' % mailinfo.folder)
+                folder_name = '.%s' % mailinfo.folder
+
             if self.cmd_options.color:
-                account_name = '%s%s%s' % (self.acct_cols[account_name],
-                                           account_name, colm.norm)
+                account_name = '%s%s%s%s' % (self.acct_cols[account_name],
+                                             account_name, folder_name, colm.norm)
+            else:
+                account_name = '%s%s' % (account_name, folder_name)
+
             # spaces to pad account name with (colouring breaks padding)
-            acct_spc = ' ' * (ac_max_len - len(mailinfo.account))
-            s_fmt = '[{acct_spc}{acct}] [{summ.num:04d}] {summ.fromad:25} {summ.subject:40}'
+            acct_spc = ' ' * (ac_max_len - len(mailinfo.account + folder_name))
+            s_fmt = '[{acct}{acct_spc}] [{summ.num:04d}] {summ.fromad:25} {summ.subject:40}'
+
             for summ in mailinfo.msgs:
+
                 summaries.append(s_fmt.format(acct=account_name,
                                               ac_max_len=ac_max_len,
                                               summ=summ, acct_spc=acct_spc))

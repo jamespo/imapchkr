@@ -23,13 +23,14 @@ Set IMAPCTM to customize IMAP connnection timeout (int in seconds)
     Usage: imapchkr [options]
 
     Options:
-      -h, --help   show this help message and exit
-      -c CONFFILE  config file
-      -b           b/w output
-      -s           short output
-      -l           list mail summary
-      -f FOLDERS   folders to check (acct:f1,f2;acct2:f3,f4)
-      -p PIDPATH   pid path
+      -h, --help    show this help message and exit
+      -c CONFFILE   config file
+      -b            b/w output
+      -s            short output
+      -l            list mail summary
+	  -w, --waybar  waybar output
+      -f FOLDERS    folders to check (acct:f1,f2;acct2:f3,f4)
+      -p PIDPATH    pid path
 
 ## Notes
 

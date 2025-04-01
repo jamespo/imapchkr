@@ -12,6 +12,7 @@
 # folders=INBOX,Work
 
 from email.header import make_header, decode_header
+import datetime
 import json
 import os
 import sys
@@ -140,22 +141,25 @@ class IMAPChkr():
         self.get_summaries = get_summaries
         self.mailconn = None
         self.folders = folders
+        self._debug('initialized')
+
+    def _debug(self, msg):
         if DEBUG:
-            print('%s: initialized' % self.account)
+            print('%s: %s @ %s' % (self.account, msg,
+                                   datetime.datetime.now()),
+                  file=sys.stderr)
 
     def connect(self):
         '''connect to the mailserver'''
         self.mailconn = imaplib.IMAP4_SSL(self.server)
         if 'AUTH=CRAM-MD5' in self.mailconn.capabilities:
             # use cram_md5 for auth
-            if DEBUG:
-                print('Using md5')
+            self._debug('Using md5')
             status, _ = self.mailconn.login_cram_md5(self.user, self.pw)
         else:
             status, _ = self.mailconn.login(self.user, self.pw)
         assert status == 'OK'
-        if DEBUG:
-            print('logged in')
+        self._debug('logged in')
         self.mailconn.list()  # TODO: needed?
 
     def checknew(self):
@@ -163,9 +167,7 @@ class IMAPChkr():
         try:
             self.connect()
         except:  # TODO: make exception checking more specific
-            if DEBUG:
-                print('connect failed')
-            pass  # handled below
+            self._debug('connect failed')
         # loop through folders & get count
         for folder in self.folders:
             try:
@@ -175,11 +177,13 @@ class IMAPChkr():
                 minfo = MailInfo(self.account, folder=folder)
             finally:
                 self.q.put(minfo)
+        self._debug('got count')
         # close connection
         if self.mailconn.state != 'NONAUTH':
             self.mailconn.close()
         try:
             self.mailconn.logout()
+            self._debug('logged out')
         except OSError:
             print("%s timed out" % self.account, file=sys.stderr)
 

@@ -86,6 +86,8 @@ def getopts():
                       dest="waybar", default=False)
     parser.add_option("-f", help="folders to check (acct:f1,f2;acct2:f3,f4)",
                       dest="folders")
+    parser.add_option("-n", help="show n most recent emails (unread or not)",
+                      dest="nrecent", type="int", default=0)
     parser.add_option("-p", help="pid path", dest="pidpath",
                       default="/tmp/.imapchkr.pid")
     options, _ = parser.parse_args()
@@ -132,7 +134,7 @@ class MailInfo():
 class IMAPChkr():
     '''defines an individual IMAP account & checks it'''
     def __init__(self, q, account, user, pw, server, folders,
-                 get_summaries=False):
+                 nrecent, get_summaries=False):
         self.q = q
         self.account = account
         self.user = user
@@ -140,6 +142,7 @@ class IMAPChkr():
         self.server = server
         self.get_summaries = get_summaries
         self.mailconn = None
+        self.nrecent = nrecent
         self.folders = folders
         self._debug('initialized')
 
@@ -190,7 +193,10 @@ class IMAPChkr():
     def count_mails(self, folder):
         '''count the mails & return MailInfo tuple'''
         allretcode, allmessages_str = self.mailconn.select(folder, readonly=True)
-        unretcode, unmessages = self.mailconn.search(None, '(UNSEEN)')
+        if self.nrecent:
+            unretcode, unmessages = self.mailconn.search(None, 'ALL')
+        else:
+            unretcode, unmessages = self.mailconn.search(None, '(UNSEEN)')
         if (unretcode, allretcode) == ('OK', 'OK'):
             allmessages_num = int(allmessages_str[0])
             unread = unmessages[0].decode(encoding="utf-8", errors='replace')
@@ -200,12 +206,16 @@ class IMAPChkr():
             else:
                 # new mails found
                 unmessages_arr = unread.split(' ')
+                new_msgs = len(unmessages_arr)
+                if self.nrecent:
+                    unmessages_arr = unmessages_arr[-self.nrecent:]
+                    new_msgs = 0
                 if self.get_summaries:
                     # will need to be enabled for run_cmd to populate details!
                     msgs = self.get_mails(unmessages_arr)
                 else:
                     msgs = []
-                minfo = MailInfo(self.account, len(unmessages_arr),
+                minfo = MailInfo(self.account, new_msgs,
                                  allmessages_num, folder,  msgs)
         else:
             raise imaplib.IMAP4.error()
@@ -260,6 +270,7 @@ class MailResults():
         self.cmd_options = cmd_options
         self.mailinfos = mailinfos
         self.acct_cols = acct_cols
+        self.summ_fmt = '[{acct}{acct_spc}] [{summ.num:04d}] {summ.fromad:25} {summ.subject:40}'
 
     def format_msgcnt(self):
         '''returns string with overview (read/unread) for all accounts'''
@@ -315,10 +326,9 @@ class MailResults():
 
             # spaces to pad account name with (colouring breaks padding)
             acct_spc = ' ' * (ac_max_len - len(mailinfo.account + folder_name))
-            s_fmt = '[{acct}{acct_spc}] [{summ.num:04d}] {summ.fromad:25} {summ.subject:40}'
 
             for summ in mailinfo.msgs:
-                summaries.append(s_fmt.format(acct=account_name,
+                summaries.append(self.summ_fmt.format(acct=account_name,
                                               ac_max_len=ac_max_len,
                                               summ=summ, acct_spc=acct_spc))
         return "\n".join(summaries)
@@ -358,7 +368,8 @@ def get_mailcounts(q, cmd_options, config, acct2folder):
                             config.get(account, 'password'),
                             config.get(account, 'server'))
         folders = acct2folder[account]
-        acct = IMAPChkr(q, account, user, pw, server, folders, cmd_options.listmail)
+        acct = IMAPChkr(q, account, user, pw, server, folders,
+                        cmd_options.nrecent, cmd_options.listmail)
         t = threading.Thread(target=acct.checknew)
         t.start()
 
@@ -381,7 +392,7 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
         # store colour for account
         acct_cols[account] = colm[(acct_num % (len(colm)-2))+2]
     mt = MailResults(cmd_options, mailinfos, acct_cols)
-    any_newmail_found = any(msg.unread > 0 for msg in mailinfos)
+    any_newmail_found = any(msg.unread > 0 for msg in mailinfos) or cmd_options.nrecent
     if cmd_options.waybar:
         waybar_out = { "text": " " + mt.format_msgcnt() + " ",
                        "tooltip": mt.format_mailsummaries() }

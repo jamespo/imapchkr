@@ -28,8 +28,9 @@ Set IMAPCTM to customize IMAP connnection timeout (int in seconds)
       -b            b/w output
       -s            short output
       -l            list mail summary
-	  -w, --waybar  waybar output
+      -w, --waybar  waybar output
       -f FOLDERS    folders to check (acct:f1,f2;acct2:f3,f4)
+      -n NRECENT    show n most recent emails (unread or not)
       -p PIDPATH    pid path
 
 ## Notes

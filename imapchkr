@@ -228,14 +228,20 @@ class IMAPChkr():
                                                    'date', 'isnew'])
         try:
             for num in msg_ids:
-                _, data = self.mailconn.fetch(num, '(RFC822.HEADER)')
+                # get msg header & flags (for seen status) & extract data
+                _, data = self.mailconn.fetch(num, '(RFC822.HEADER FLAGS)')
+                flag_str = data[0][0].decode(encoding='utf-8', errors='replace')
+                self._debug('flags: %s' % flag_str)
+                # gmail does not provide flags eg \Seen so this is broken
+                isnew = r'\Seen' not in flag_str
                 msg = data[0][1]
                 msg = msg.decode(encoding='utf-8', errors='replace')
                 # msg = msg.decode('cp1252')  # windows codec seems to work
                 msg = email.message_from_string(msg)
                 email_summ = EmailSummary(int(num), self.clean_address(msg['From']),
                                           self.clean_subject(msg['Subject']),
-                                          None, None)
+                                          msg['Date'], isnew)
+                self._debug(email_summ)
                 msgs.append(email_summ)
         except Exception as ex:
             # if any errors just don't list mails
@@ -247,6 +253,7 @@ class IMAPChkr():
     def clean_address(email_addr):
         '''return clean from address'''
         clean_addr = parseaddr(email_addr)
+        # prefer "friendly" address
         return IMAPChkr.unicode_to_str(clean_addr[0] or clean_addr[1])
 
     @staticmethod

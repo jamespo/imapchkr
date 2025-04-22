@@ -144,6 +144,9 @@ class IMAPChkr():
         self.mailconn = None
         self.nrecent = nrecent
         self.folders = folders
+        # limit length of summary fields with below vars
+        self.fromad_width = 25
+        self.subject_width = 40
         self._debug('initialized')
 
     def _debug(self, msg):
@@ -166,7 +169,7 @@ class IMAPChkr():
         self.mailconn.list()  # TODO: needed?
 
     def checknew(self):
-        '''puts namedtuple Mailinfo with summary of mailbox contents on q'''
+        '''puts namedtuple MailInfo with summary of mailbox contents on q'''
         try:
             self.connect()
         except:  # TODO: make exception checking more specific
@@ -232,14 +235,14 @@ class IMAPChkr():
                 _, data = self.mailconn.fetch(num, '(RFC822.HEADER FLAGS)')
                 flag_str = data[0][0].decode(encoding='utf-8', errors='replace')
                 self._debug('flags: %s' % flag_str)
-                # gmail does not provide flags eg \Seen so this is broken
+                # gmail does not provide flags eg \Seen so setting isnew is broken
                 isnew = r'\Seen' not in flag_str
                 msg = data[0][1]
                 msg = msg.decode(encoding='utf-8', errors='replace')
                 # msg = msg.decode('cp1252')  # windows codec seems to work
                 msg = email.message_from_string(msg)
-                email_summ = EmailSummary(int(num), self.clean_address(msg['From']),
-                                          self.clean_subject(msg['Subject']),
+                email_summ = EmailSummary(int(num), self.clean_address(msg['From'][:self.fromad_width]),
+                                          self.clean_subject(msg['Subject'][:self.subject_width]),
                                           msg['Date'], isnew)
                 self._debug(email_summ)
                 msgs.append(email_summ)

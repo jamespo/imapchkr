@@ -241,8 +241,8 @@ class IMAPChkr():
                 msg = msg.decode(encoding='utf-8', errors='replace')
                 # msg = msg.decode('cp1252')  # windows codec seems to work
                 msg = email.message_from_string(msg)
-                email_summ = EmailSummary(int(num), self.clean_address(msg['From'][:self.fromad_width]),
-                                          self.clean_subject(msg['Subject'][:self.subject_width]),
+                email_summ = EmailSummary(int(num), self.clean_address(msg['From'])[:self.fromad_width],
+                                          self.clean_subject(msg['Subject'])[:self.subject_width],
                                           msg['Date'], isnew)
                 self._debug(email_summ)
                 msgs.append(email_summ)

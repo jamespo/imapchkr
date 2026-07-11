@@ -4,7 +4,7 @@
 """
 imapchkr - checks for new messages in IMAP server
 """
-# (c) James Powell - jamespo [at] gmail [dot] com 2014-2026
+# (c) James Powell - jamespo [at] gmail [dot] com 2014-2026 | https://github.com/jamespo/imapchkr
 # Create ~/.config/.imapchkr.conf with 1 or more sections as below:
 #
 # [serveralias]
@@ -21,6 +21,8 @@ imapchkr - checks for new messages in IMAP server
 # <xbar.author.github>jamespo</xbar.author.github>
 # <xbar.desc>Checks IMAP servers and displays unread count</xbar.desc>
 # <xbar.dependencies>python</xbar.dependencies>
+# <xbar.var>boolean(VAR_RUNINXBAR=true): Run in xbar (leave as true)</xbar.var>
+
 
 from email.header import make_header, decode_header
 import datetime
@@ -30,7 +32,7 @@ import sys
 import imaplib
 import email
 from email.utils import parseaddr
-from optparse import OptionParser
+from optparse import OptionParser, OptionGroup
 from collections import namedtuple
 import configparser
 import queue
@@ -90,23 +92,31 @@ def getopts():
     parser.add_option("-b", help="b/w output", action="store_false",
                       dest="color", default=True)
     parser.add_option("-s", help="short output", action="store_true",
-                      dest="short", default=False)
+                      dest="short")
     parser.add_option("-l", help="list mail summary", action="store_true",
-                      dest="listmail", default=False)
-    parser.add_option("-w", "--waybar", help="waybar output", action="store_true",
-                      dest="waybar", default=False)
+                      dest="listmail")
     parser.add_option("-f", help="folders to check (acct:f1,f2;acct2:f3,f4)",
                       dest="folders")
     parser.add_option("-n", help="show n most recent emails (unread or not)",
                       dest="nrecent", type="int", default=0)
     parser.add_option("-p", help="pid path", dest="pidpath",
                       default="/tmp/.imapchkr.pid")
+    group = OptionGroup(parser, "Debug Options")
+    group.add_option("-w", "--waybar", help="waybar output", action="store_true",
+                      dest="waybar")
+    group.add_option("-x", "--xbar", help="xbar output", action="store_true",
+                      dest="xbar")
     options, _ = parser.parse_args()
     options.folders = parse_folder_opts(options.folders)
     if options.waybar:
         # waybar output is always b/w and list on
         options.listmail = True
         options.color = False
+    elif options.xbar or os.getenv('VAR_RUNINXBAR'):
+        options.color = False
+        options.short = True
+        options.xbar = True
+        options.waybar = False
     return options
 
 
@@ -402,7 +412,7 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     found_unread = False
     # loop round accounts & folders (just to get # of q entries right)
     for acct_num, account in enumerate(acct2folder.keys()):
-        for folder in acct2folder[account]:
+        for _ in acct2folder[account]:
             msg_results = q.get()  # NOT NECESSARILY the folder/acct in the loop!
             if (not found_unread) and msg_results.unread is not None:
                 found_unread = msg_results.unread > 0
@@ -414,6 +424,7 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
         acct_cols[account] = colm[(acct_num % (len(colm)-2))+2]
     mt = MailResults(cmd_options, mailinfos, acct_cols)
     any_newmail_found = any(msg.unread > 0 for msg in mailinfos) or cmd_options.nrecent
+    # output format options
     if cmd_options.waybar:
         waybar_out = { "text": " " + mt.format_msgcnt() + " ",
                        "tooltip": mt.format_mailsummaries() }
@@ -421,6 +432,11 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
             # change waybar CSS if unread mail found
             waybar_out["class"] = "newmail"
         print(json.dumps(waybar_out))
+    elif cmd_options.xbar:
+        if any_newmail_found:
+            print(f"📨 {mt.format_msgcnt()}")
+        else:
+            print("📧")
     else:
         print(mt.format_msgcnt())
         # display email summaries if chosen and any new mails

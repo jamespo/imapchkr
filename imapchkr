@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-# imapchkr - checks for new messages in IMAP server
-# (c) James Powell - jamespo [at] gmail [dot] com 2014-2020
+"""
+imapchkr - checks for new messages in IMAP server
+"""
+# (c) James Powell - jamespo [at] gmail [dot] com 2014-2026
 # Create ~/.config/.imapchkr.conf with 1 or more sections as below:
 #
 # [serveralias]
 # user=james
 # password=2347923rbkaa
 # server=yourimapserver.com
+## following 2 sections are optional
 # newmail_cmd=/usr/bin/ogg123 /usr/share/sounds/gnome/default/alerts/sonar.ogg
 # folders=INBOX,Work
+#
+# <xbar.title>IMAP Checker</xbar.title>
+# <xbar.version>v0.1</xbar.version>
+# <xbar.author>James Powell</xbar.author>
+# <xbar.author.github>jamespo</xbar.author.github>
+# <xbar.desc>Checks IMAP servers and displays unread count</xbar.desc>
+# <xbar.dependencies>python</xbar.dependencies>
 
 from email.header import make_header, decode_header
 import datetime

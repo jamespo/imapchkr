@@ -1,5 +1,5 @@
 # imapchkr
-Command-line IMAP mail checker for Python 3
+Command-line IMAP mail checker for Python 3 with output options for xbar & waybar.
 
 [Check the wiki!](https://github.com/jamespo/imapchkr/wiki)
 

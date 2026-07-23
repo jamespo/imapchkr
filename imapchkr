@@ -117,6 +117,7 @@ def getopts():
         options.short = True
         options.xbar = True
         options.waybar = False
+        options.listmail = True
     return options
 
 
@@ -435,6 +436,9 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
     elif cmd_options.xbar:
         if any_newmail_found:
             print(f"📨 {mt.format_msgcnt()}")
+            print("---")
+            print(mt.format_mailsummaries())
+
         else:
             print("📧")
     else:

@@ -172,6 +172,7 @@ class IMAPChkr():
         self._debug('initialized')
 
     def _debug(self, msg):
+        """Prints debug messages to the standard error stream if the DEBUG flag is set."""
         if DEBUG:
             print('%s: %s @ %s' % (self.account, msg,
                                    datetime.datetime.now()),

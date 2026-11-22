@@ -11,6 +11,9 @@ imapchkr - checks for new messages in IMAP server
 # user=james
 # password=2347923rbkaa
 # server=yourimapserver.com
+## user/password can instead be fetched from cipherstore by token id, eg:
+# user=cipherstore:imap-myacct-user
+# password=cipherstore:imap-myacct-pass
 ## following 2 sections are optional
 # newmail_cmd=/usr/bin/ogg123 /usr/share/sounds/gnome/default/alerts/sonar.ogg
 # folders=INBOX,Work
@@ -41,7 +44,13 @@ import socket
 import subprocess
 import threading
 
+try:
+    from cipherstore import CipherStore
+except ImportError:
+    CipherStore = None  # optional: only needed for cipherstore: credentials
+
 DEBUG=False
+CIPHERSTORE_PREFIX = 'cipherstore:'
 
 # tuple of shell colour codes
 colmap = namedtuple('ColMap', ['norm', 'white', 'blue', 'yellow', 'green'])
@@ -394,12 +403,40 @@ def populate_arg(arg, msg_results):
         return ''
 
 
-def get_mailcounts(q, cmd_options, config, acct2folder):
+def resolve_secret(value, account, field, store_cache):
+    '''return value, fetching from cipherstore if prefixed with cipherstore:'''
+    if not value.startswith(CIPHERSTORE_PREFIX):
+        return value
+    token_id = value[len(CIPHERSTORE_PREFIX):]
+    if CipherStore is None:
+        sys.exit('%s: %s is in cipherstore but the cipherstore module '
+                 'could not be imported' % (account, field))
+    try:
+        if not store_cache:
+            store_cache.append(CipherStore())
+        return store_cache[0].get(token_id)
+    except Exception as ex:
+        sys.exit('%s: failed to get %s from cipherstore (token %s): %s'
+                 % (account, field, token_id, ex))
+
+
+def get_credentials(config, acct2folder):
+    '''return dict of account -> (user, pw, server), resolving cipherstore refs'''
+    store_cache = []  # lazily created CipherStore client
+    creds = {}
+    for account in acct2folder.keys():
+        user = resolve_secret(config.get(account, 'user'), account,
+                              'user', store_cache)
+        pw = resolve_secret(config.get(account, 'password'), account,
+                            'password', store_cache)
+        creds[account] = (user, pw, config.get(account, 'server'))
+    return creds
+
+
+def get_mailcounts(q, cmd_options, creds, acct2folder):
     '''start thread to check each account & put results on q'''
     for account in acct2folder.keys():
-        user, pw, server = (config.get(account, 'user'),
-                            config.get(account, 'password'),
-                            config.get(account, 'server'))
+        user, pw, server = creds[account]
         folders = acct2folder[account]
         acct = IMAPChkr(q, account, user, pw, server, folders,
                         cmd_options.nrecent, cmd_options.listmail)
@@ -452,13 +489,15 @@ def display_mailcounts(q, cmd_options, config, acct2folder):
 def main():
     '''load options, start check threads and display results'''
     cmd_options = getopts()
-    pidfile(cmd_options.pidpath)
     config = readconf(cmd_options.conffile)
     acct2folder = get_accounts(config, cmd_options.folders)
+    # resolve credentials up front so a cipherstore failure exits cleanly
+    creds = get_credentials(config, acct2folder)
+    pidfile(cmd_options.pidpath)
     q = queue.Queue(len(acct2folder))  # total # of folders
     # set IMAP server connections timeout
     socket.setdefaulttimeout(int(os.getenv('IMAPCTM', 15)))
-    get_mailcounts(q, cmd_options, config, acct2folder)
+    get_mailcounts(q, cmd_options, creds, acct2folder)
     display_mailcounts(q, cmd_options, config, acct2folder)
     pidfile(cmd_options.pidpath, 'remove')
 
